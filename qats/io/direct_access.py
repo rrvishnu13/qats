@@ -384,3 +384,87 @@ def write_ts_data(path, time: np.ndarray, data: dict):
         fts.close()
 
 
+def write_outb_data(path, time: np.ndarray, dataDict: dict):
+    
+    fts = open(path, "wb")
+    
+    try:
+    
+        #Collect data to be written to binary file
+        ChanName = ['time'] #list of channel names starting with time array
+        nChannels =  len(dataDict)
+        nT = time.size
+        ChanUnit = ['-'] * (nChannels + 1) #1 additional for time array 
+        data = []
+        ChanNameLen = 0 #max length of the channel string
+        
+        for key, arr in dataDict.items():
+            ChanName.append(key)
+            ChanNameLen = max(len(key), ChanNameLen)
+        
+            # write time series array to ts file (position 1 refers to time series data)
+            data.append(arr[1])
+        
+        dataWithoutTime = np.array(data).transpose()
+    
+        #FFileFmtID_ChanLen_In  = 4, allows the max length of channel names to be specified
+        fts.write(pack('@h', 4))               #int16
+        
+        #Length of channel names
+        fts.write(pack('@h', ChanNameLen))  #int16
+        
+        #number of channels
+        fts.write(pack('@i', nChannels))       #int32
+       
+        # number of time steps
+        fts.write(pack('@i', nT))       #int32
+    
+        #starting time
+        fts.write(pack('@d', time[0]))       #float64   
+    
+        #time step
+        fts.write(pack('@d', time[1] - time[0]))       #float64        
+    
+        #scaling parameters, Taken from  writeBinary() from fast_output_file.py [pyFAST]    
+        int16Max   = np.single( 32767.0)         # Largest integer represented in 2 bytes,  2**15 - 1
+        int16Min   = np.single(-32768.0)         # Smallest integer represented in 2 bytes -2**15
+        int16Rng   = np.single(int16Max - int16Min)  # Max Range of 2 byte integer
+        mins   = np.min(dataWithoutTime, axis=0)
+        ranges = np.single(np.max(dataWithoutTime, axis=0) - mins)
+        ranges[ranges==0]=1  # range set to 1 for constant channel. In OpenFAST: /sqrt(epsilon(1.0_SiKi))
+        ColScl  = np.single(int16Rng/ranges)
+        ColOff  = np.single(int16Min - np.single(mins)*ColScl)    
+        fts.write(pack('@{}f'.format(nChannels), *ColScl))
+        fts.write(pack('@{}f'.format(nChannels), *ColOff))
+        
+        # Description string
+        descStr = 'File format converted from SIMA'
+        descStrASCII = [ord(char) for char in descStr]
+        fts.write(pack('@i',len(descStrASCII)))
+        fts.write(pack('@{}B'.format(len((descStrASCII))), *descStrASCII))
+    
+        #Write channel names
+        for string in ChanName :          
+            fts.write(pack(f'@{ChanNameLen}B', *[ord(char) for char in string.ljust(ChanNameLen, " ")]))
+        
+        #Write channel units
+        for string in ChanUnit :          
+            fts.write(pack(f'@{ChanNameLen}B', *[ord(char) for char in string.ljust(ChanNameLen, " ")]))
+        
+        #Pack data    
+        packedData=np.zeros((nT, nChannels), dtype=np.int16)
+        for iChan in range(nChannels):
+            packedData[:,iChan] = np.clip(ColScl[iChan]*dataWithoutTime[:,iChan]+ColOff[iChan], int16Min, int16Max)
+            
+        fts.write(pack('@{}h'.format(packedData.size), *packedData.flatten()))
+        
+
+    
+    except Exception:
+        raise RuntimeError("Exception encountered when writing data to file '%s'." % filename)
+
+    finally:
+        fts.close()
+        
+    
+        

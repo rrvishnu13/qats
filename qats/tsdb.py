@@ -34,7 +34,8 @@ from .io.direct_access import (
     read_tda_names,
     read_ts_data,
     read_tda_data,
-    write_ts_data
+    write_ts_data,
+    write_outb_data
 )
 from .io.sintef_mat import (
     read_names as read_mat_names,
@@ -830,6 +831,9 @@ class TsDB(object):
 
         if ext == ".ts":    # write direct access file
             write_ts_data(filename, common_time_array, container)
+            
+        if ext == ".outb":    # write direct access file
+            write_outb_data(filename, common_time_array, container)
 
         elif ext == ".dat":     # write ascii file
             write_dat_data(filename, common_time_array, container, delim=delim, skip_header=skip_header)
